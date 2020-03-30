@@ -2,33 +2,31 @@
 // Licensed under the MIT License.
 package com.azure.cosmos.workedappexample;
 
-import com.azure.cosmos.ChangeFeedProcessor;
-import com.azure.cosmos.ConnectionPolicy;
-import com.azure.cosmos.ConsistencyLevel;
-import com.azure.cosmos.CosmosAsyncContainer;
-import com.azure.cosmos.CosmosAsyncDatabase;
-import com.azure.cosmos.CosmosClientBuilder;
-import com.azure.cosmos.CosmosClientException;
-import com.azure.cosmos.CosmosAsyncClient;
-import com.azure.cosmos.CosmosPagedFlux;
-import com.azure.cosmos.models.ChangeFeedProcessorOptions;
-import com.azure.cosmos.models.CosmosItemRequestOptions;
 import com.azure.cosmos.workedappexample.common.AccountSettings;
-import com.azure.cosmos.implementation.Utils;
-import com.azure.cosmos.models.CosmosAsyncContainerResponse;
-import com.azure.cosmos.models.CosmosContainerProperties;
-import com.azure.cosmos.models.CosmosContainerRequestOptions;
-import com.azure.cosmos.models.FeedOptions;
+import com.azure.data.cosmos.ChangeFeedProcessor;
+import com.azure.data.cosmos.ChangeFeedProcessorOptions;
+import com.azure.data.cosmos.ConnectionPolicy;
+import com.azure.data.cosmos.ConsistencyLevel;
+import com.azure.data.cosmos.CosmosClient;
+import com.azure.data.cosmos.CosmosClientBuilder;
+import com.azure.data.cosmos.CosmosClientException;
+import com.azure.data.cosmos.CosmosContainer;
+import com.azure.data.cosmos.CosmosContainerProperties;
+import com.azure.data.cosmos.CosmosContainerRequestOptions;
+import com.azure.data.cosmos.CosmosContainerResponse;
+import com.azure.data.cosmos.CosmosDatabase;
+import com.azure.data.cosmos.CosmosItemProperties;
+import com.azure.data.cosmos.CosmosItemRequestOptions;
+import com.azure.data.cosmos.FeedOptions;
+import com.azure.data.cosmos.internal.Utils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -58,8 +56,8 @@ public class SampleGroceryStore {
     private static ChangeFeedProcessor changeFeedProcessorInstance;
     private static AtomicBoolean isProcessorRunning = new AtomicBoolean(false);
 
-    private static CosmosAsyncContainer feedContainer;
-    private static CosmosAsyncContainer typeContainer;
+    private static CosmosContainer feedContainer;
+    private static CosmosContainer typeContainer;
 
     private static Console c = System.console();
 
@@ -74,16 +72,16 @@ public class SampleGroceryStore {
             c.readLine();
 
             logger.info("-->CREATE DocumentClient");
-            CosmosAsyncClient client = getCosmosClient();
+            CosmosClient client = getCosmosClient();
 
             logger.info("-->CREATE Contoso Grocery Store database: " + DATABASE_NAME);
-            CosmosAsyncDatabase cosmosDatabase = createNewDatabase(client, DATABASE_NAME);
+            CosmosDatabase cosmosDatabase = createNewDatabase(client, DATABASE_NAME);
 
             logger.info("-->CREATE container for store inventory: " + COLLECTION_NAME);
             feedContainer = createNewCollection(client, DATABASE_NAME, COLLECTION_NAME, "/id");
 
             logger.info("-->CREATE container for lease: " + COLLECTION_NAME + "-leases");
-            CosmosAsyncContainer leaseContainer = createNewLeaseCollection(client, DATABASE_NAME, COLLECTION_NAME + "-leases");
+            CosmosContainer leaseContainer = createNewLeaseCollection(client, DATABASE_NAME, COLLECTION_NAME + "-leases");
 
             logger.info("-->CREATE container for materialized view partitioned by 'type': " + COLLECTION_NAME + "-leases");
             typeContainer = createNewCollection(client, DATABASE_NAME, COLLECTION_NAME + "-pktype", "/type");
@@ -133,17 +131,17 @@ public class SampleGroceryStore {
         System.out.println("END Sample");
     }
 
-    public static ChangeFeedProcessor getChangeFeedProcessor(String hostName, CosmosAsyncContainer feedContainer, CosmosAsyncContainer leaseContainer) {
+    public static ChangeFeedProcessor getChangeFeedProcessor(String hostName, CosmosContainer feedContainer, CosmosContainer leaseContainer) {
         ChangeFeedProcessorOptions cfOptions = new ChangeFeedProcessorOptions();
-        cfOptions.setFeedPollDelay(Duration.ofMillis(100));
-        cfOptions.setStartFromBeginning(true);
-        return ChangeFeedProcessor.changeFeedProcessorBuilder()
-            .setOptions(cfOptions)
-            .setHostName(hostName)
-            .setFeedContainer(feedContainer)
-            .setLeaseContainer(leaseContainer)
-            .setHandleChanges((List<JsonNode> docs) -> {
-                for (JsonNode document : docs) {
+        cfOptions.feedPollDelay(Duration.ofMillis(100));
+        cfOptions.startFromBeginning(true);
+        return ChangeFeedProcessor.Builder()
+            .options(cfOptions)
+            .hostName(hostName)
+            .feedContainer(feedContainer)
+            .leaseContainer(leaseContainer)
+            .handleChanges((List<CosmosItemProperties> docs) -> {
+                for (CosmosItemProperties document : docs) {
                         //Duplicate each document update from the feed container into the materialized view container
                         updateInventoryTypeMaterializedView(document);
                 }
@@ -152,22 +150,22 @@ public class SampleGroceryStore {
             .build();
     }
 
-    private static void updateInventoryTypeMaterializedView(JsonNode document) {
+    private static void updateInventoryTypeMaterializedView(CosmosItemProperties document) {
         typeContainer.upsertItem(document).subscribe();
     }
 
-    public static CosmosAsyncClient getCosmosClient() {
+    public static CosmosClient getCosmosClient() {
 
         return new CosmosClientBuilder()
-                .setEndpoint(AccountSettings.HOST)
-                .setKey(AccountSettings.MASTER_KEY)
-                .setConnectionPolicy(ConnectionPolicy.getDefaultPolicy())
-                .setConsistencyLevel(ConsistencyLevel.EVENTUAL)
-                .buildAsyncClient();
+                .endpoint(AccountSettings.HOST)
+                .key(AccountSettings.MASTER_KEY)
+                .connectionPolicy(ConnectionPolicy.defaultPolicy())
+                .consistencyLevel(ConsistencyLevel.EVENTUAL)
+                .build();
     }
 
-    public static CosmosAsyncDatabase createNewDatabase(CosmosAsyncClient client, String databaseName) {
-        return client.createDatabaseIfNotExists(databaseName).block().getDatabase();
+    public static CosmosDatabase createNewDatabase(CosmosClient client, String databaseName) {
+        return client.createDatabaseIfNotExists(databaseName).block().database();
     }
 
     public static void deleteDocument() {
@@ -195,35 +193,17 @@ public class SampleGroceryStore {
         feedContainer.upsertItem(document,new CosmosItemRequestOptions()).block();
     }
 
-    public static void deleteDatabase(CosmosAsyncDatabase cosmosDatabase) {
+    public static void deleteDatabase(CosmosDatabase cosmosDatabase) {
         cosmosDatabase.delete().block();
     }
 
-    public static CosmosAsyncContainer createNewCollection(CosmosAsyncClient client, String databaseName, String collectionName, String partitionKey) {
-        CosmosAsyncDatabase databaseLink = client.getDatabase(databaseName);
-        CosmosAsyncContainer collectionLink = databaseLink.getContainer(collectionName);
-        CosmosAsyncContainerResponse containerResponse = null;
-
-        try {
-            containerResponse = collectionLink.read().block();
-
-            if (containerResponse != null) {
-                throw new IllegalArgumentException(String.format("Collection %s already exists in database %s.", collectionName, databaseName));
-            }
-        } catch (RuntimeException ex) {
-            if (ex instanceof CosmosClientException) {
-                CosmosClientException cosmosClientException = (CosmosClientException) ex;
-
-                if (cosmosClientException.getStatusCode() != 404) {
-                    throw ex;
-                }
-            } else {
-                throw ex;
-            }
-        }
+    public static CosmosContainer createNewCollection(CosmosClient client, String databaseName, String collectionName, String partitionKey) {
+        CosmosDatabase databaseLink = client.getDatabase(databaseName);
+        CosmosContainer collectionLink = databaseLink.getContainer(collectionName);
+        CosmosContainerResponse containerResponse = null;
 
         CosmosContainerProperties containerSettings = new CosmosContainerProperties(collectionName, partitionKey);
-        containerSettings.setDefaultTimeToLiveInSeconds(-1);
+        containerSettings.defaultTimeToLive(-1);
         CosmosContainerRequestOptions requestOptions = new CosmosContainerRequestOptions();
         containerResponse = databaseLink.createContainer(containerSettings, 10000, requestOptions).block();
 
@@ -231,37 +211,13 @@ public class SampleGroceryStore {
             throw new RuntimeException(String.format("Failed to create collection %s in database %s.", collectionName, databaseName));
         }
 
-        return containerResponse.getContainer();
+        return containerResponse.container();
     }
 
-    public static CosmosAsyncContainer createNewLeaseCollection(CosmosAsyncClient client, String databaseName, String leaseCollectionName) {
-        CosmosAsyncDatabase databaseLink = client.getDatabase(databaseName);
-        CosmosAsyncContainer leaseCollectionLink = databaseLink.getContainer(leaseCollectionName);
-        CosmosAsyncContainerResponse leaseContainerResponse = null;
-
-        try {
-            leaseContainerResponse = leaseCollectionLink.read().block();
-
-            if (leaseContainerResponse != null) {
-                leaseCollectionLink.delete().block();
-
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ex) {
-                    ex.printStackTrace();
-                }
-            }
-        } catch (RuntimeException ex) {
-            if (ex instanceof CosmosClientException) {
-                CosmosClientException cosmosClientException = (CosmosClientException) ex;
-
-                if (cosmosClientException.getStatusCode() != 404) {
-                    throw ex;
-                }
-            } else {
-                throw ex;
-            }
-        }
+    public static CosmosContainer createNewLeaseCollection(CosmosClient client, String databaseName, String leaseCollectionName) {
+        CosmosDatabase databaseLink = client.getDatabase(databaseName);
+        CosmosContainer leaseCollectionLink = databaseLink.getContainer(leaseCollectionName);
+        CosmosContainerResponse leaseContainerResponse = null;
 
         CosmosContainerProperties containerSettings = new CosmosContainerProperties(leaseCollectionName, "/id");
         CosmosContainerRequestOptions requestOptions = new CosmosContainerRequestOptions();
@@ -272,10 +228,10 @@ public class SampleGroceryStore {
             throw new RuntimeException(String.format("Failed to create collection %s in database %s.", leaseCollectionName, databaseName));
         }
 
-        return leaseContainerResponse.getContainer();
+        return leaseContainerResponse.container();
     }
 
-    public static void createNewDocumentsJSON(CosmosAsyncContainer containerClient, Duration delay) {
+    public static void createNewDocumentsJSON(CosmosContainer containerClient, Duration delay) {
         System.out.println("Creating documents\n");
         String suffix = RandomStringUtils.randomAlphabetic(10);
         List<String> brands = Arrays.asList("Jerry's","Baker's Ridge Farms","Exporters Inc.","WriteSmart","Stationary","L. Alfred","Haberford's","Drink-smart","Polaid","Choice Dairy");
@@ -322,59 +278,4 @@ public class SampleGroceryStore {
             }
         }
     }
-
-    public static void queryItems(String query, CosmosAsyncContainer container) {
-
-        FeedOptions queryOptions = new FeedOptions();
-        queryOptions.setMaxItemCount(10);
-        //  Set populate query metrics to get metrics around query executions
-        queryOptions.setPopulateQueryMetrics(true);
-
-        CosmosPagedFlux<JsonNode> pagedFluxResponse = container.queryItems(
-                query, queryOptions, JsonNode.class);
-
-        final CountDownLatch completionLatch = new CountDownLatch(1);
-
-        pagedFluxResponse.byPage().subscribe(
-                fluxResponse -> {
-                    logger.info("Got a page of query result with " +
-                            fluxResponse.getResults().size() + " items(s)"
-                            + " and request charge of " + fluxResponse.getRequestCharge());
-
-                    /*
-                    fluxResponse.getResults()
-
-                    logger.info("Item Ids " + fluxResponse
-                            .getResults()
-                            .stream()
-                            .map(JsonNode::get("id"))
-                            .collect(Collectors.toList()));
-
-                     */
-                },
-                err -> {
-                    if (err instanceof CosmosClientException) {
-                        //Client-specific errors
-                        CosmosClientException cerr = (CosmosClientException) err;
-                        cerr.printStackTrace();
-                        logger.error(String.format("Read Item failed with %s\n", cerr));
-                    } else {
-                        //General errors
-                        err.printStackTrace();
-                    }
-
-                    completionLatch.countDown();
-                },
-                () -> {
-                    completionLatch.countDown();
-                }
-        );
-
-        try {
-            completionLatch.await();
-        } catch (InterruptedException err) {
-            throw new AssertionError("Unexpected Interruption", err);
-        }
-    }
-
 }
