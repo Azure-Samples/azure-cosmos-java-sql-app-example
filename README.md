@@ -171,7 +171,65 @@ mvn clean package
 
     ![Materialized view](media/cosmos_materializedview-emph-todelete.JPG)
 
-    Hit enter again to call the function ```deleteDocument()``` in the example code. This function, shown below, upserts a new version of the document with ```/ttl == 5```, which sets document Time-To-Live (TTL) to 5sec. The Change Feed ```feedPollDelay``` is set to 100ms; therefore, Change Feed responds to this update almost instantly and calls ```updateInventoryTypeMaterializedView()``` shown above. That last function call will upsert the new document with TTL of 5sec into **InventoryContainer-pktype**.
+    Hit enter again to call the function ```deleteDocument()``` in the example code. This function, shown below, upserts a new version of the document with ```/ttl == 5```, which sets document Time-To-Live (TTL) to 5sec. 
+    
+    **Java SDK 4.0**
+    ```java
+    public static void deleteDocument() {
+
+        String jsonString =    "{\"id\" : \"" + idToDelete + "\""
+                + ","
+                + "\"brand\" : \"Jerry's\""
+                + ","
+                + "\"type\" : \"plums\""
+                + ","
+                + "\"quantity\" : \"50\""
+                + ","
+                + "\"ttl\" : 5"
+                + "}";
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode document = null;
+
+        try {
+            document = mapper.readTree(jsonString);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        feedContainer.upsertItem(document,new CosmosItemRequestOptions()).block();
+    }    
+    ```
+
+    **Java SDK 3.7.0**
+    ```java
+    public static void deleteDocument() {
+
+        String jsonString =    "{\"id\" : \"" + idToDelete + "\""
+                + ","
+                + "\"brand\" : \"Jerry's\""
+                + ","
+                + "\"type\" : \"plums\""
+                + ","
+                + "\"quantity\" : \"50\""
+                + ","
+                + "\"ttl\" : 5"
+                + "}";
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode document = null;
+
+        try {
+            document = mapper.readTree(jsonString);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        feedContainer.upsertItem(document,new CosmosItemRequestOptions()).block();
+    }    
+    ```
+
+    The Change Feed ```feedPollDelay``` is set to 100ms; therefore, Change Feed responds to this update almost instantly and calls ```updateInventoryTypeMaterializedView()``` shown above. That last function call will upsert the new document with TTL of 5sec into **InventoryContainer-pktype**.
 
     The effect is that after about 5 seconds, the document will expire and be deleted from both containers.
 
