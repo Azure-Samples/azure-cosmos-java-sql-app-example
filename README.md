@@ -28,7 +28,7 @@ If you have not already done so, clone the app example repo:
 git clone https://github.com/Azure-Samples/azure-cosmos-java-sql-app-example.git
 ```
 
-> You have a choice to work through this Quickstart with Java SDK 4.0 or Java SDK 3.7.0. **If you would like to use Java SDK 3.7.0, in the terminal type ```git checkout v3```**. Otherwise, stay on the ```master``` branch, which defaults to Java SDK 4.0.
+> You have a choice to work through this Quickstart with Java SDK 4.0 or Java SDK 3.7.0. **If you would like to use Java SDK 3.7.0, in the terminal type ```git checkout SDK3.7.0```**. Otherwise, stay on the ```master``` branch, which defaults to Java SDK 4.0.
 
 Open a terminal in the repo directory. Build the app by running
 
