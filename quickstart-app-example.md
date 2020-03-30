@@ -92,7 +92,11 @@ mvn clean package
 
     ```java
     public static ChangeFeedProcessor getChangeFeedProcessor(String hostName, CosmosAsyncContainer feedContainer, CosmosAsyncContainer leaseContainer) {
+        ChangeFeedProcessorOptions cfOptions = new ChangeFeedProcessorOptions();
+        cfOptions.setFeedPollDelay(Duration.ofMillis(100));
+        cfOptions.setStartFromBeginning(true);
         return ChangeFeedProcessor.changeFeedProcessorBuilder()
+            .setOptions(cfOptions)
             .setHostName(hostName)
             .setFeedContainer(feedContainer)
             .setLeaseContainer(leaseContainer)
@@ -107,7 +111,7 @@ mvn clean package
     }
 
     private static void updateInventoryTypeMaterializedView(JsonNode document) {
-        typeContainer.createItem(document).subscribe();
+        typeContainer.upsertItem(document).subscribe();
     }
     ```
 
@@ -117,4 +121,16 @@ mvn clean package
 
 1. Now, in Data Explorer navigate to **InventoryContainer-pktype > items**. This is the materialized view - the items in this container mirror **InventoryContainer** because they were inserted programmatically by Change Feed. Note the partition key (```type```). So this materialized view is optimized for queries filtering over ```type```, which would be inefficient on **InventoryContainer** because it is partitioned on ```id```.
 
-    ![Materialized view](media/cosmos_materializedview.JPG)
+    ![Materialized view](media/cosmos_materializedview2.JPG)
+
+1. We're going to delete an document from both **InventoryContainer** and **InventoryContainer-pktype** using just a single ```upsertItem()``` call. First, take a look at Azure Portal Data Explorer. We'll delete the document for which ```/type == "plums"```; it is encircled in red below
+
+    ![Materialized view](media/cosmos_materializedview-emph-todelete.JPG)
+
+    Hit enter again to call the function ```deleteDocument()``` in the example code. This function, shown below, upserts a new version of the document with ```/ttl == 5```, which sets document Time-To-Live (TTL) to 5sec. The Change Feed ```feedPollDelay``` is set to 100ms; therefore, Change Feed responds to this update almost instantly and calls ```updateInventoryTypeMaterializedView()``` shown above. That last function call will upsert the new document with TTL of 5sec into **InventoryContainer-pktype**.
+
+    The effect is that after about 5 seconds, the document will expire and be deleted from both containers.
+
+    This procedure is necessary because Change Feed only issues events on item insertion or update, not on item deletion.
+
+1. Press enter one more time to close the program and clean up its resources.

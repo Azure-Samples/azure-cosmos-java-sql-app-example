@@ -11,6 +11,8 @@ import com.azure.cosmos.CosmosClientBuilder;
 import com.azure.cosmos.CosmosClientException;
 import com.azure.cosmos.CosmosAsyncClient;
 import com.azure.cosmos.CosmosPagedFlux;
+import com.azure.cosmos.models.ChangeFeedProcessorOptions;
+import com.azure.cosmos.models.CosmosItemRequestOptions;
 import com.azure.cosmos.workedappexample.common.AccountSettings;
 import com.azure.cosmos.implementation.Utils;
 import com.azure.cosmos.models.CosmosAsyncContainerResponse;
@@ -56,9 +58,12 @@ public class SampleGroceryStore {
     private static ChangeFeedProcessor changeFeedProcessorInstance;
     private static AtomicBoolean isProcessorRunning = new AtomicBoolean(false);
 
+    private static CosmosAsyncContainer feedContainer;
     private static CosmosAsyncContainer typeContainer;
 
     private static Console c = System.console();
+
+    private static String idToDelete;
 
     public static void main (String[]args) {
         logger.info("BEGIN Sample");
@@ -75,7 +80,7 @@ public class SampleGroceryStore {
             CosmosAsyncDatabase cosmosDatabase = createNewDatabase(client, DATABASE_NAME);
 
             logger.info("-->CREATE container for store inventory: " + COLLECTION_NAME);
-            CosmosAsyncContainer feedContainer = createNewCollection(client, DATABASE_NAME, COLLECTION_NAME, "/id");
+            feedContainer = createNewCollection(client, DATABASE_NAME, COLLECTION_NAME, "/id");
 
             logger.info("-->CREATE container for lease: " + COLLECTION_NAME + "-leases");
             CosmosAsyncContainer leaseContainer = createNewLeaseCollection(client, DATABASE_NAME, COLLECTION_NAME + "-leases");
@@ -99,9 +104,15 @@ public class SampleGroceryStore {
             System.out.println("\n\n\n\nPress enter to insert 10 items into the container." + COLLECTION_NAME + "...");
             c.readLine();
 
-            //Insert 10 documents into the feed container
-            //createNewDocumentsJSON demonstrates how to insert a JSON object into a Cosmos DB container as an item
+            // Insert 10 documents into the feed container
+            // createNewDocumentsJSON demonstrates how to insert a JSON object into a Cosmos DB container as an item
             createNewDocumentsJSON(feedContainer, Duration.ofSeconds(3));
+
+            System.out.println("\n\n\n\nPress enter to delete item with id " + idToDelete + " (Jerry's plums)...");
+            c.readLine();
+
+            // Demonstrate deleting a document from the feed container and the materialized view, using TTL=0
+            deleteDocument();
 
             System.out.println("\n\n\n\nPress ENTER to clean up & exit the sample code...");
             c.readLine();
@@ -123,7 +134,11 @@ public class SampleGroceryStore {
     }
 
     public static ChangeFeedProcessor getChangeFeedProcessor(String hostName, CosmosAsyncContainer feedContainer, CosmosAsyncContainer leaseContainer) {
+        ChangeFeedProcessorOptions cfOptions = new ChangeFeedProcessorOptions();
+        cfOptions.setFeedPollDelay(Duration.ofMillis(100));
+        cfOptions.setStartFromBeginning(true);
         return ChangeFeedProcessor.changeFeedProcessorBuilder()
+            .setOptions(cfOptions)
             .setHostName(hostName)
             .setFeedContainer(feedContainer)
             .setLeaseContainer(leaseContainer)
@@ -138,7 +153,7 @@ public class SampleGroceryStore {
     }
 
     private static void updateInventoryTypeMaterializedView(JsonNode document) {
-        typeContainer.createItem(document).subscribe();
+        typeContainer.upsertItem(document).subscribe();
     }
 
     public static CosmosAsyncClient getCosmosClient() {
@@ -153,6 +168,31 @@ public class SampleGroceryStore {
 
     public static CosmosAsyncDatabase createNewDatabase(CosmosAsyncClient client, String databaseName) {
         return client.createDatabaseIfNotExists(databaseName).block().getDatabase();
+    }
+
+    public static void deleteDocument() {
+
+        String jsonString =    "{\"id\" : \"" + idToDelete + "\""
+                + ","
+                + "\"brand\" : \"Jerry's\""
+                + ","
+                + "\"type\" : \"plums\""
+                + ","
+                + "\"quantity\" : \"50\""
+                + ","
+                + "\"ttl\" : 5"
+                + "}";
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode document = null;
+
+        try {
+            document = mapper.readTree(jsonString);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        feedContainer.upsertItem(document,new CosmosItemRequestOptions()).block();
     }
 
     public static void deleteDatabase(CosmosAsyncDatabase cosmosDatabase) {
@@ -183,6 +223,7 @@ public class SampleGroceryStore {
         }
 
         CosmosContainerProperties containerSettings = new CosmosContainerProperties(collectionName, partitionKey);
+        containerSettings.setDefaultTimeToLiveInSeconds(-1);
         CosmosContainerRequestOptions requestOptions = new CosmosContainerRequestOptions();
         containerResponse = databaseLink.createContainer(containerSettings, 10000, requestOptions).block();
 
@@ -244,7 +285,10 @@ public class SampleGroceryStore {
 
         for (int i = 0; i < brands.size(); i++) {
 
-            String jsonString =    "{\"id\" : \"" + UUID.randomUUID().toString() + "\""
+            String id = UUID.randomUUID().toString();
+            if (i==0) idToDelete=id;
+
+            String jsonString =    "{\"id\" : \"" + id + "\""
                                  + ","
                                  + "\"brand\" : \"" + brands.get(i) + "\""
                                  + ","
