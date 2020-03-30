@@ -167,7 +167,7 @@ mvn clean package
 
     ![Materialized view](media/cosmos_materializedview2.JPG)
 
-1. We're going to delete an document from both **InventoryContainer** and **InventoryContainer-pktype** using just a single ```upsertItem()``` call. First, take a look at Azure Portal Data Explorer. We'll delete the document for which ```/type == "plums"```; it is encircled in red below
+1. We're going to delete a document from both **InventoryContainer** and **InventoryContainer-pktype** using just a single ```upsertItem()``` call. First, take a look at Azure Portal Data Explorer. We'll delete the document for which ```/type == "plums"```; it is encircled in red below
 
     ![Materialized view](media/cosmos_materializedview-emph-todelete.JPG)
 
