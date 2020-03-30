@@ -72,6 +72,8 @@ mvn clean package
 
     Press enter. Now the following block of code will execute and initialize the Change Feed processor on another thread: 
 
+
+    **Java SDK 4.0**
     ```java
     changeFeedProcessorInstance = getChangeFeedProcessor("SampleHost_1", feedContainer, leaseContainer);
     changeFeedProcessorInstance.start()
@@ -84,6 +86,19 @@ mvn clean package
     while (!isProcessorRunning.get()); //Wait for Change Feed processor start
     ```
 
+    **Java SDK 3.7.0**
+    ```java
+    changeFeedProcessorInstance = getChangeFeedProcessor("SampleHost_1", feedContainer, leaseContainer);
+    changeFeedProcessorInstance.start()
+        .subscribeOn(Schedulers.elastic())
+        .doOnSuccess(aVoid -> {
+            isProcessorRunning.set(true);
+        })
+        .subscribe();
+
+    while (!isProcessorRunning.get()); //Wait for Change Feed processor start    
+    ```
+
     ```"SampleHost_1"``` is the name of the Change Feed processor worker. ```changeFeedProcessorInstance.start()``` is what actually starts the Change Feed processor.
 
     Return to the Azure Portal Data Explorer in your browser. Under the **InventoryContainer-leases** container, click **items** to see its contents. You will see that Change Feed Processor has populated the lease container, i.e. the processor has assigned the ```SampleHost_1``` worker a lease on some partitions of the **InventoryContainer**.
@@ -92,6 +107,7 @@ mvn clean package
 
 1. Press enter again in the terminal. This will trigger 10 documents to be inserted into **InventoryContainer**. Each document insertion appears in the Change Feed as JSON; the following callback code handles these events by mirroring the JSON documents into a materialized view:
 
+    **Java SDK 4.0**
     ```java
     public static ChangeFeedProcessor getChangeFeedProcessor(String hostName, CosmosAsyncContainer feedContainer, CosmosAsyncContainer leaseContainer) {
         ChangeFeedProcessorOptions cfOptions = new ChangeFeedProcessorOptions();
@@ -115,6 +131,32 @@ mvn clean package
     private static void updateInventoryTypeMaterializedView(JsonNode document) {
         typeContainer.upsertItem(document).subscribe();
     }
+    ```
+
+    **Java SDK 3.7.0**
+    ```java
+    public static ChangeFeedProcessor getChangeFeedProcessor(String hostName, CosmosContainer feedContainer, CosmosContainer leaseContainer) {
+        ChangeFeedProcessorOptions cfOptions = new ChangeFeedProcessorOptions();
+        cfOptions.feedPollDelay(Duration.ofMillis(100));
+        cfOptions.startFromBeginning(true);
+        return ChangeFeedProcessor.Builder()
+            .options(cfOptions)
+            .hostName(hostName)
+            .feedContainer(feedContainer)
+            .leaseContainer(leaseContainer)
+            .handleChanges((List<CosmosItemProperties> docs) -> {
+                for (CosmosItemProperties document : docs) {
+                        //Duplicate each document update from the feed container into the materialized view container
+                        updateInventoryTypeMaterializedView(document);
+                }
+
+            })
+            .build();
+    }
+
+    private static void updateInventoryTypeMaterializedView(CosmosItemProperties document) {
+        typeContainer.upsertItem(document).subscribe();
+    }    
     ```
 
 1. Allow the code to run 5-10sec. Then return to the Azure Portal Data Explorer and navigate to **InventoryContainer > items**. You should see that items are being inserted into the inventory container; note the partition key (```id```).
