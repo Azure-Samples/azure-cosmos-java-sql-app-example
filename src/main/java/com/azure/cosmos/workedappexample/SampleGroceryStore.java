@@ -26,8 +26,12 @@ import org.slf4j.LoggerFactory;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * End-to-end application example code using Change Feed.
@@ -42,14 +46,14 @@ import java.util.concurrent.CountDownLatch;
 public class SampleGroceryStore {
 
     public static int WAIT_FOR_WORK = 60000;
-    public static final String DATABASE_NAME = "db_" + RandomStringUtils.randomAlphabetic(7);
-    public static final String COLLECTION_NAME = "coll_" + RandomStringUtils.randomAlphabetic(7);
+    public static final String DATABASE_NAME = "GroceryStoreDatabase";
+    public static final String COLLECTION_NAME = "InventoryContainer";
     private static final ObjectMapper OBJECT_MAPPER = Utils.getSimpleObjectMapper();
     protected static Logger logger = LoggerFactory.getLogger(SampleGroceryStore.class.getSimpleName());
 
 
     private static ChangeFeedProcessor changeFeedProcessorInstance;
-    private static boolean isWorkCompleted = false;
+    private static AtomicBoolean isProcessorRunning = new AtomicBoolean(false);
 
     private static CosmosAsyncContainer typeContainer;
 
@@ -58,57 +62,52 @@ public class SampleGroceryStore {
 
         try {
 
-            System.out.println("Press enter to create the grocery store inventory system...");
+            System.out.println("\n\n\n\nPress enter to create the grocery store inventory system...");
+            System.in.read();
 
-            System.out.println("-->CREATE DocumentClient");
+            logger.info("-->CREATE DocumentClient");
             CosmosAsyncClient client = getCosmosClient();
 
-            System.out.println("-->CREATE Contoso Grocery Store database: " + DATABASE_NAME);
+            logger.info("-->CREATE Contoso Grocery Store database: " + DATABASE_NAME);
             CosmosAsyncDatabase cosmosDatabase = createNewDatabase(client, DATABASE_NAME);
 
-            System.out.println("-->CREATE container for store inventory: " + COLLECTION_NAME);
+            logger.info("-->CREATE container for store inventory: " + COLLECTION_NAME);
             CosmosAsyncContainer feedContainer = createNewCollection(client, DATABASE_NAME, COLLECTION_NAME, "/id");
 
-            System.out.println("-->CREATE container for lease: " + COLLECTION_NAME + "-leases");
+            logger.info("-->CREATE container for lease: " + COLLECTION_NAME + "-leases");
             CosmosAsyncContainer leaseContainer = createNewLeaseCollection(client, DATABASE_NAME, COLLECTION_NAME + "-leases");
 
-            System.out.println("-->CREATE container for materialized view partitioned by 'type': " + COLLECTION_NAME + "-leases");
+            logger.info("-->CREATE container for materialized view partitioned by 'type': " + COLLECTION_NAME + "-leases");
             typeContainer = createNewCollection(client, DATABASE_NAME, COLLECTION_NAME + "-pktype", "/type");
 
-            System.out.println("Press enter to add items to the grocery store inventory system...");
+            System.out.println("\n\n\n\nPress enter to start creating the materialized view...");
+            System.in.read();
 
             changeFeedProcessorInstance = getChangeFeedProcessor("SampleHost_1", feedContainer, leaseContainer);
             changeFeedProcessorInstance.start()
                 .subscribeOn(Schedulers.elastic())
                 .doOnSuccess(aVoid -> {
-                    //Insert 10 documents into the feed container
-                    //createNewDocumentsJSON demonstrates how to insert a JSON object into a Cosmos DB container as an item
-                    createNewDocumentsJSON(feedContainer, 10, Duration.ofSeconds(3));
-                    isWorkCompleted = true;
+                    isProcessorRunning.set(true);
                 })
                 .subscribe();
 
-            long remainingWork = WAIT_FOR_WORK;
-            while (!isWorkCompleted && remainingWork > 0) {
-                Thread.sleep(100);
-                remainingWork -= 100;
+            while (!isProcessorRunning.get()); //Wait for Change Feed processor start
+
+            System.out.println("\n\n\n\nPress enter to insert 10 items into the container." + COLLECTION_NAME + "...");
+            System.in.read();
+
+            //Insert 10 documents into the feed container
+            //createNewDocumentsJSON demonstrates how to insert a JSON object into a Cosmos DB container as an item
+            createNewDocumentsJSON(feedContainer, Duration.ofSeconds(3));
+
+            System.out.println("\n\n\n\nPress ENTER to clean up & exit the sample code...");
+            System.in.read();
+
+            if (changeFeedProcessorInstance != null) {
+                changeFeedProcessorInstance.stop().block();
             }
 
-            if (isWorkCompleted) {
-                if (changeFeedProcessorInstance != null) {
-                    changeFeedProcessorInstance.stop().subscribe();
-                }
-            } else {
-                throw new RuntimeException("The change feed processor initialization and automatic create document feeding process did not complete in the expected time");
-            }
-
-            System.out.println("Press enter to query the materialized view...");
-
-            queryItems("SELECT * FROM c WHERE c.type IN ('milk','pens')", typeContainer);
-
-            System.out.println("Press enter to clean up & exit the sample code...");
-
-            System.out.println("-->DELETE sample's database: " + DATABASE_NAME);
+            logger.info("-->DELETE sample's database: " + DATABASE_NAME);
             deleteDatabase(cosmosDatabase);
 
             Thread.sleep(500);
@@ -232,18 +231,23 @@ public class SampleGroceryStore {
         return leaseContainerResponse.getContainer();
     }
 
-    public static void createNewDocumentsJSON(CosmosAsyncContainer containerClient, int count, Duration delay) {
+    public static void createNewDocumentsJSON(CosmosAsyncContainer containerClient, Duration delay) {
         System.out.println("Creating documents\n");
         String suffix = RandomStringUtils.randomAlphabetic(10);
-        for (int i = 0; i <= count; i++) {
+        List<String> brands = Arrays.asList("Jerry's","Baker's Ridge Farms","Exporters Inc.","WriteSmart","Stationary","L. Alfred","Haberford's","Drink-smart","Polaid","Choice Dairy");
+        List<String> types = Arrays.asList("plums","ice cream","espresso","pens","stationery","cheese","cheese","kool-aid","water","milk");
+        List<String> quantities = Arrays.asList("50","15","5","10","5","6","4","50","100","20");
 
-            String jsonString = "{\"id\" : \"" + String.format("0%d-%s", i, suffix) + "\""
+
+        for (int i = 0; i < brands.size(); i++) {
+
+            String jsonString =    "{\"id\" : \"" + UUID.randomUUID().toString() + "\""
                                  + ","
-                                 + "\"brand\" : \"" + ((char)(65+i)) + "\""
+                                 + "\"brand\" : \"" + brands.get(i) + "\""
                                  + ","
-                                 + "\"type\" : \"" + ((char)(69+i)) + "\""
+                                 + "\"type\" : \"" + types.get(i) + "\""
                                  + ","
-                                 + "\"expiryDate\" : \"" + "2020-03-" + StringUtils.leftPad(String.valueOf(5+i), 2, "0") + "\""
+                                 + "\"quantity\" : \"" + quantities.get(i) + "\""
                                  + "}";
 
             ObjectMapper mapper = new ObjectMapper();
