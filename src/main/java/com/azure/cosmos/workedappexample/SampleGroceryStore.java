@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.io.Console;
 
 /**
  * End-to-end application example code using Change Feed.
@@ -57,13 +58,15 @@ public class SampleGroceryStore {
 
     private static CosmosAsyncContainer typeContainer;
 
+    private static Console c = System.console();
+
     public static void main (String[]args) {
         logger.info("BEGIN Sample");
 
         try {
 
             System.out.println("\n\n\n\nPress enter to create the grocery store inventory system...");
-            System.in.read();
+            c.readLine();
 
             logger.info("-->CREATE DocumentClient");
             CosmosAsyncClient client = getCosmosClient();
@@ -81,7 +84,7 @@ public class SampleGroceryStore {
             typeContainer = createNewCollection(client, DATABASE_NAME, COLLECTION_NAME + "-pktype", "/type");
 
             System.out.println("\n\n\n\nPress enter to start creating the materialized view...");
-            System.in.read();
+            c.readLine();
 
             changeFeedProcessorInstance = getChangeFeedProcessor("SampleHost_1", feedContainer, leaseContainer);
             changeFeedProcessorInstance.start()
@@ -94,14 +97,14 @@ public class SampleGroceryStore {
             while (!isProcessorRunning.get()); //Wait for Change Feed processor start
 
             System.out.println("\n\n\n\nPress enter to insert 10 items into the container." + COLLECTION_NAME + "...");
-            System.in.read();
+            c.readLine();
 
             //Insert 10 documents into the feed container
             //createNewDocumentsJSON demonstrates how to insert a JSON object into a Cosmos DB container as an item
             createNewDocumentsJSON(feedContainer, Duration.ofSeconds(3));
 
             System.out.println("\n\n\n\nPress ENTER to clean up & exit the sample code...");
-            System.in.read();
+            c.readLine();
 
             if (changeFeedProcessorInstance != null) {
                 changeFeedProcessorInstance.stop().block();
