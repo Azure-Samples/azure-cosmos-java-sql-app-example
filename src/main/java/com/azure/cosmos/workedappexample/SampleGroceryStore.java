@@ -3,38 +3,33 @@
 package com.azure.cosmos.workedappexample;
 
 import com.azure.cosmos.ChangeFeedProcessor;
-import com.azure.cosmos.ConnectionPolicy;
 import com.azure.cosmos.ConsistencyLevel;
 import com.azure.cosmos.CosmosAsyncContainer;
 import com.azure.cosmos.CosmosAsyncDatabase;
 import com.azure.cosmos.CosmosClientBuilder;
-import com.azure.cosmos.CosmosClientException;
 import com.azure.cosmos.CosmosAsyncClient;
-import com.azure.cosmos.CosmosPagedFlux;
+import com.azure.cosmos.CosmosException;
 import com.azure.cosmos.models.ChangeFeedProcessorOptions;
+import com.azure.cosmos.models.CosmosContainerResponse;
 import com.azure.cosmos.models.CosmosItemRequestOptions;
+import com.azure.cosmos.models.ThroughputProperties;
 import com.azure.cosmos.workedappexample.common.AccountSettings;
 import com.azure.cosmos.implementation.Utils;
-import com.azure.cosmos.models.CosmosAsyncContainerResponse;
 import com.azure.cosmos.models.CosmosContainerProperties;
 import com.azure.cosmos.models.CosmosContainerRequestOptions;
-import com.azure.cosmos.models.FeedOptions;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Scanner;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.io.Console;
 
 /**
  * End-to-end application example code using Change Feed.
@@ -61,8 +56,6 @@ public class SampleGroceryStore {
     private static CosmosAsyncContainer feedContainer;
     private static CosmosAsyncContainer typeContainer;
 
-    private static Console c = System.console();
-
     private static String idToDelete;
 
     public static void main (String[]args) {
@@ -70,8 +63,7 @@ public class SampleGroceryStore {
 
         try {
 
-            System.out.println("\n\n\n\nPress enter to create the grocery store inventory system...");
-            c.readLine();
+            System.out.println("\n\n\n\nCreating the grocery store inventory system...");
 
             logger.info("-->CREATE DocumentClient");
             CosmosAsyncClient client = getCosmosClient();
@@ -88,8 +80,7 @@ public class SampleGroceryStore {
             logger.info("-->CREATE container for materialized view partitioned by 'type': " + COLLECTION_NAME + "-leases");
             typeContainer = createNewCollection(client, DATABASE_NAME, COLLECTION_NAME + "-pktype", "/type");
 
-            System.out.println("\n\n\n\nPress enter to start creating the materialized view...");
-            c.readLine();
+            System.out.println("\n\n\n\nCreating materialized view...");
 
             changeFeedProcessorInstance = getChangeFeedProcessor("SampleHost_1", feedContainer, leaseContainer);
             changeFeedProcessorInstance.start()
@@ -101,21 +92,22 @@ public class SampleGroceryStore {
 
             while (!isProcessorRunning.get()); //Wait for Change Feed processor start
 
-            System.out.println("\n\n\n\nPress enter to insert 10 items into the container." + COLLECTION_NAME + "...");
-            c.readLine();
+            System.out.println("\n\n\n\nInserting 10 items into the container." + COLLECTION_NAME + "...");
 
             // Insert 10 documents into the feed container
             // createNewDocumentsJSON demonstrates how to insert a JSON object into a Cosmos DB container as an item
             createNewDocumentsJSON(feedContainer, Duration.ofSeconds(3));
 
-            System.out.println("\n\n\n\nPress enter to delete item with id " + idToDelete + " (Jerry's plums)...");
-            c.readLine();
+            Thread.sleep(3000);
+
+            System.out.println("\n\n\n\nDeleting item with id " + idToDelete + " (Jerry's plums)...");
+
+            Thread.sleep(500);
 
             // Demonstrate deleting a document from the feed container and the materialized view, using TTL=0
             deleteDocument();
 
-            System.out.println("\n\n\n\nPress ENTER to clean up & exit the sample code...");
-            c.readLine();
+            System.out.println("\n\n\n\nCleaning up & exiting the sample code...");
 
             if (changeFeedProcessorInstance != null) {
                 changeFeedProcessorInstance.stop().block();
@@ -138,11 +130,11 @@ public class SampleGroceryStore {
         cfOptions.setFeedPollDelay(Duration.ofMillis(100));
         cfOptions.setStartFromBeginning(true);
         return ChangeFeedProcessor.changeFeedProcessorBuilder()
-            .setOptions(cfOptions)
-            .setHostName(hostName)
-            .setFeedContainer(feedContainer)
-            .setLeaseContainer(leaseContainer)
-            .setHandleChanges((List<JsonNode> docs) -> {
+            .options(cfOptions)
+            .hostName(hostName)
+            .feedContainer(feedContainer)
+            .leaseContainer(leaseContainer)
+            .handleChanges((List<JsonNode> docs) -> {
                 for (JsonNode document : docs) {
                         //Duplicate each document update from the feed container into the materialized view container
                         updateInventoryTypeMaterializedView(document);
@@ -159,15 +151,16 @@ public class SampleGroceryStore {
     public static CosmosAsyncClient getCosmosClient() {
 
         return new CosmosClientBuilder()
-                .setEndpoint(AccountSettings.HOST)
-                .setKey(AccountSettings.MASTER_KEY)
-                .setConnectionPolicy(ConnectionPolicy.getDefaultPolicy())
-                .setConsistencyLevel(ConsistencyLevel.EVENTUAL)
+                .endpoint(AccountSettings.HOST)
+                .key(AccountSettings.MASTER_KEY)
+                .consistencyLevel(ConsistencyLevel.EVENTUAL)
+                .contentResponseOnWriteEnabled(true)
                 .buildAsyncClient();
     }
 
     public static CosmosAsyncDatabase createNewDatabase(CosmosAsyncClient client, String databaseName) {
-        return client.createDatabaseIfNotExists(databaseName).block().getDatabase();
+        client.createDatabaseIfNotExists(databaseName).block();
+        return client.getDatabase(databaseName);
     }
 
     public static void deleteDocument() {
@@ -202,7 +195,7 @@ public class SampleGroceryStore {
     public static CosmosAsyncContainer createNewCollection(CosmosAsyncClient client, String databaseName, String collectionName, String partitionKey) {
         CosmosAsyncDatabase databaseLink = client.getDatabase(databaseName);
         CosmosAsyncContainer collectionLink = databaseLink.getContainer(collectionName);
-        CosmosAsyncContainerResponse containerResponse = null;
+        CosmosContainerResponse containerResponse = null;
 
         try {
             containerResponse = collectionLink.read().block();
@@ -211,8 +204,8 @@ public class SampleGroceryStore {
                 throw new IllegalArgumentException(String.format("Collection %s already exists in database %s.", collectionName, databaseName));
             }
         } catch (RuntimeException ex) {
-            if (ex instanceof CosmosClientException) {
-                CosmosClientException cosmosClientException = (CosmosClientException) ex;
+            if (ex instanceof CosmosException) {
+                CosmosException cosmosClientException = (CosmosException) ex;
 
                 if (cosmosClientException.getStatusCode() != 404) {
                     throw ex;
@@ -225,19 +218,20 @@ public class SampleGroceryStore {
         CosmosContainerProperties containerSettings = new CosmosContainerProperties(collectionName, partitionKey);
         containerSettings.setDefaultTimeToLiveInSeconds(-1);
         CosmosContainerRequestOptions requestOptions = new CosmosContainerRequestOptions();
-        containerResponse = databaseLink.createContainer(containerSettings, 10000, requestOptions).block();
+        ThroughputProperties throughputProperties = ThroughputProperties.createManualThroughput(10000);
+        containerResponse = databaseLink.createContainer(containerSettings, throughputProperties, requestOptions).block();
 
         if (containerResponse == null) {
             throw new RuntimeException(String.format("Failed to create collection %s in database %s.", collectionName, databaseName));
         }
 
-        return containerResponse.getContainer();
+        return databaseLink.getContainer(collectionName);
     }
 
     public static CosmosAsyncContainer createNewLeaseCollection(CosmosAsyncClient client, String databaseName, String leaseCollectionName) {
         CosmosAsyncDatabase databaseLink = client.getDatabase(databaseName);
         CosmosAsyncContainer leaseCollectionLink = databaseLink.getContainer(leaseCollectionName);
-        CosmosAsyncContainerResponse leaseContainerResponse = null;
+        CosmosContainerResponse leaseContainerResponse = null;
 
         try {
             leaseContainerResponse = leaseCollectionLink.read().block();
@@ -252,8 +246,8 @@ public class SampleGroceryStore {
                 }
             }
         } catch (RuntimeException ex) {
-            if (ex instanceof CosmosClientException) {
-                CosmosClientException cosmosClientException = (CosmosClientException) ex;
+            if (ex instanceof CosmosException) {
+                CosmosException cosmosClientException = (CosmosException) ex;
 
                 if (cosmosClientException.getStatusCode() != 404) {
                     throw ex;
@@ -265,14 +259,14 @@ public class SampleGroceryStore {
 
         CosmosContainerProperties containerSettings = new CosmosContainerProperties(leaseCollectionName, "/id");
         CosmosContainerRequestOptions requestOptions = new CosmosContainerRequestOptions();
-
-        leaseContainerResponse = databaseLink.createContainer(containerSettings, 400,requestOptions).block();
+        ThroughputProperties throughputProperties = ThroughputProperties.createManualThroughput(400);
+        leaseContainerResponse = databaseLink.createContainer(containerSettings, throughputProperties,requestOptions).block();
 
         if (leaseContainerResponse == null) {
             throw new RuntimeException(String.format("Failed to create collection %s in database %s.", leaseCollectionName, databaseName));
         }
 
-        return leaseContainerResponse.getContainer();
+        return databaseLink.getContainer(leaseCollectionName);
     }
 
     public static void createNewDocumentsJSON(CosmosAsyncContainer containerClient, Duration delay) {
