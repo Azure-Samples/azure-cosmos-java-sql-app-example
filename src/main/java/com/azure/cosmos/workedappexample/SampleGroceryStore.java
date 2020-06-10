@@ -3,6 +3,7 @@
 package com.azure.cosmos.workedappexample;
 
 import com.azure.cosmos.ChangeFeedProcessor;
+import com.azure.cosmos.ChangeFeedProcessorBuilder;
 import com.azure.cosmos.ConsistencyLevel;
 import com.azure.cosmos.CosmosAsyncContainer;
 import com.azure.cosmos.CosmosAsyncDatabase;
@@ -27,7 +28,6 @@ import reactor.core.scheduler.Schedulers;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Scanner;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -129,7 +129,7 @@ public class SampleGroceryStore {
         ChangeFeedProcessorOptions cfOptions = new ChangeFeedProcessorOptions();
         cfOptions.setFeedPollDelay(Duration.ofMillis(100));
         cfOptions.setStartFromBeginning(true);
-        return ChangeFeedProcessor.changeFeedProcessorBuilder()
+        return new ChangeFeedProcessorBuilder()
             .options(cfOptions)
             .hostName(hostName)
             .feedContainer(feedContainer)
@@ -141,7 +141,7 @@ public class SampleGroceryStore {
                 }
 
             })
-            .build();
+            .buildChangeFeedProcessor();
     }
 
     private static void updateInventoryTypeMaterializedView(JsonNode document) {
