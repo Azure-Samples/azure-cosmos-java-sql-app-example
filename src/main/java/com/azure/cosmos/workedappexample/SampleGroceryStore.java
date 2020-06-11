@@ -82,6 +82,8 @@ public class SampleGroceryStore {
 
             System.out.println("\n\n\n\nCreating materialized view...");
 
+            //  <InitializeCFP>
+
             changeFeedProcessorInstance = getChangeFeedProcessor("SampleHost_1", feedContainer, leaseContainer);
             changeFeedProcessorInstance.start()
                 .subscribeOn(Schedulers.elastic())
@@ -91,6 +93,8 @@ public class SampleGroceryStore {
                 .subscribe();
 
             while (!isProcessorRunning.get()); //Wait for Change Feed processor start
+
+            //  </InitializeCFP>
 
             System.out.println("\n\n\n\nInserting 10 items into the container." + COLLECTION_NAME + "...");
 
@@ -125,6 +129,8 @@ public class SampleGroceryStore {
         System.out.println("END Sample");
     }
 
+    //  <CFPCallback>
+
     public static ChangeFeedProcessor getChangeFeedProcessor(String hostName, CosmosAsyncContainer feedContainer, CosmosAsyncContainer leaseContainer) {
         ChangeFeedProcessorOptions cfOptions = new ChangeFeedProcessorOptions();
         cfOptions.setFeedPollDelay(Duration.ofMillis(100));
@@ -148,6 +154,8 @@ public class SampleGroceryStore {
         typeContainer.upsertItem(document).subscribe();
     }
 
+    //  </CFPCallback>
+
     public static CosmosAsyncClient getCosmosClient() {
 
         return new CosmosClientBuilder()
@@ -162,6 +170,8 @@ public class SampleGroceryStore {
         client.createDatabaseIfNotExists(databaseName).block();
         return client.getDatabase(databaseName);
     }
+
+    //  <DeleteWithTTL>
 
     public static void deleteDocument() {
 
@@ -187,6 +197,8 @@ public class SampleGroceryStore {
 
         feedContainer.upsertItem(document,new CosmosItemRequestOptions()).block();
     }
+
+    //  </DeleteWithTTL>
 
     public static void deleteDatabase(CosmosAsyncDatabase cosmosDatabase) {
         cosmosDatabase.delete().block();
